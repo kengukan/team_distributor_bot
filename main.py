@@ -70,7 +70,7 @@ logging.basicConfig(
 ADMIN_IDS = [641655716]
 
 # Состояния разговора
-FIO, CONFIRM = range(2)
+FIO = 1
 
 class TeamManager:
     def __init__(self, db_path='teams.db'):
@@ -186,19 +186,7 @@ class TeamManager:
         stats = cursor.fetchall()
         conn.close()
         return stats
-    
-    def get_total_users(self):
-        """Получить общее количество пользователей"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute('SELECT COUNT(*) FROM users')
-        count = cursor.fetchone()[0]
-        conn.close()
-        
-        return count
 
-# Инициализация менеджера команд
 team_manager = TeamManager()
 
 # 🎯 ДВЕ ПОСТОЯННЫЕ КНОПКИ ВНИЗУ
@@ -206,34 +194,48 @@ MAIN_KEYBOARD = ReplyKeyboardMarkup(
     [
         ["🎯 Узнать свою команду", "📊 Статистика"]
     ],
-    resize_keyboard=True,
-    persistent=True  # Кнопки всегда будут видны
+    resize_keyboard=True
 )
 
 def start(update: Update, context: CallbackContext):
     """Начало работы с ботом"""
     user = update.message.from_user
-    print(f"👤 Пользователь {user.id} вызвал /start")
     
-    # Проверяем, есть ли пользователь уже в системе
-    existing_user = team_manager.get_user_info(user.id)
+    # Сразу просим ввести ФИО
+    update.message.reply_text(
+        "👋 Добро пожаловать в систему распределения по командам!\n\n"
+        "📝 Пожалуйста, введите ваше ФИО (Фамилия Имя Отчество):\n\n"
+        "Пример: Иванов Иван Иванович",
+        reply_markup=ReplyKeyboardMarkup([[]], resize_keyboard=True)  # Убираем кнопки на время ввода ФИО
+    )
+    return FIO
+
+def get_fio(update: Update, context: CallbackContext):
+    """Получение ФИО от пользователя и распределение по команде"""
+    fio = update.message.text.strip()
+    user_id = update.message.from_user.id
     
-    if existing_user:
-        fio, team_number = existing_user
+    print(f"📝 Пользователь {user_id} ввел ФИО: {fio}")
+    
+    # Простая валидация ФИО
+    if len(fio) < 5 or len(fio.split()) < 2:
         update.message.reply_text(
-            f"👋 С возвращением, {fio}!\n\n"
-            f"✅ Вы в команде №{team_number}\n\n"
-            "Используйте кнопки ниже:",
-            reply_markup=MAIN_KEYBOARD
-        )
-        return ConversationHandler.END
-    else:
-        update.message.reply_text(
-            "👋 Добро пожаловать на нулевую сессию!\n\n"
-            "🎯 Нажмите кнопку ниже, чтобы узнать свою команду!",
-            reply_markup=MAIN_KEYBOARD
+            "❌ Пожалуйста, введите полное ФИО (Фамилия Имя Отчество)\n\n"
+            "Пример: Иванов Иван Иванович"
         )
         return FIO
+    
+    # 🎲 РАСПРЕДЕЛЯЕМ ПО КОМАНДЕ после ввода ФИО
+    team_number = team_manager.assign_random_team(user_id, fio)
+    
+    update.message.reply_text(
+        f"🎉 Поздравляем, {fio}!\n\n"
+        f"🏆 Вы в команде №{team_number}!\n\n"
+        "Теперь вы можете использовать кнопки ниже:",
+        reply_markup=MAIN_KEYBOARD
+    )
+    
+    return ConversationHandler.END
 
 def button_handler(update: Update, context: CallbackContext):
     """Обработчик нажатия кнопок"""
@@ -250,120 +252,23 @@ def button_handler(update: Update, context: CallbackContext):
             fio, team_number = existing_user
             update.message.reply_text(
                 f"👋 {fio}!\n\n"
-                f"✅ Вы в команде №{team_number}\n\n"
-                "Для просмотра списка всех команд используйте /list",
+                f"✅ Вы в команде №{team_number}",
                 reply_markup=MAIN_KEYBOARD
             )
-            return ConversationHandler.END
         else:
+            # Если пользователя нет - просим ввести ФИО
             update.message.reply_text(
-                "📝 Пожалуйста, введите ваше ФИО (Фамилия Имя Отчество):\n\n"
-                "Пример: Иванов Иван Иванович"
+                "📝 Для регистрации введите ваше ФИО (Фамилия Имя Отчество):\n\n"
+                "Пример: Иванов Иван Иванович",
+                reply_markup=ReplyKeyboardMarkup([[]], resize_keyboard=True)
             )
             return FIO
     
     elif button_text == "📊 Статистика":
         print(f"📊 Пользователь {user.id} нажал 'Статистика'")
         return show_stats(update, context)
-
-def get_fio(update: Update, context: CallbackContext):
-    """Получение ФИО от пользователя"""
-    fio = update.message.text.strip()
-    print(f"📝 Пользователь {update.message.from_user.id} ввел ФИО: {fio}")
     
-    # Простая валидация ФИО
-    if len(fio) < 5 or len(fio.split()) < 2:
-        update.message.reply_text(
-            "❌ Пожалуйста, введите полное ФИО (Фамилия Имя Отчество)\n\n"
-            "Пример: Иванов Иван Иванович"
-        )
-        return FIO
-    
-    # Сохраняем ФИО в контексте
-    context.user_data['fio'] = fio
-    
-    # Подтверждение с кнопками
-    update.message.reply_text(
-        f"✅ Проверьте ваши данные:\n\n"
-        f"ФИО: {fio}\n\n"
-        f"Всё верно?",
-        reply_markup=ReplyKeyboardMarkup(
-            [["✅ Да, всё верно"], ["❌ Нет, исправить"]],
-            one_time_keyboard=True,
-            resize_keyboard=True
-        )
-    )
-    return CONFIRM
-
-def confirm_fio(update: Update, context: CallbackContext):
-    """Подтверждение ФИО и распределение по команде"""
-    choice = update.message.text
-    user_id = update.message.from_user.id
-    
-    if choice == "✅ Да, всё верно":
-        fio = context.user_data['fio']
-        
-        # 🎲 Распределяем по команде (случайно с балансировкой)
-        team_number = team_manager.assign_random_team(user_id, fio)
-        
-        update.message.reply_text(
-            f"🎉 Поздравляем, {fio}!\n\n"
-            f"🏆 Вы в команде №{team_number}!\n\n"
-            "Теперь вы можете использовать кнопки ниже:",
-            reply_markup=MAIN_KEYBOARD
-        )
-        
-        # Очищаем временные данные
-        context.user_data.clear()
-        return ConversationHandler.END
-    
-    else:
-        update.message.reply_text(
-            "📝 Пожалуйста, введите ваше ФИО заново:\n\n"
-            "Пример: Иванов Иван Иванович",
-            reply_markup=MAIN_KEYBOARD
-        )
-        return FIO
-
-def cancel(update: Update, context: CallbackContext):
-    """Отмена регистрации"""
-    update.message.reply_text(
-        "Регистрация отменена.\n"
-        "Если захотите зарегистрироваться, используйте кнопки ниже:",
-        reply_markup=MAIN_KEYBOARD
-    )
-    context.user_data.clear()
     return ConversationHandler.END
-
-def show_teams_list(update: Update, context: CallbackContext):
-    """Показать список всех команд с участниками"""
-    teams = team_manager.get_teams_with_members()
-    
-    if not teams:
-        update.message.reply_text(
-            "📋 Список команд пуст.",
-            reply_markup=MAIN_KEYBOARD
-        )
-        return
-    
-    response = "📋 СПИСОК КОМАНД И УЧАСТНИКОВ:\n\n"
-    
-    for team_number in sorted(teams.keys()):
-        members = teams[team_number]
-        response += f"🏆 КОМАНДА {team_number} ({len(members)} чел.):\n"
-        
-        for i, member in enumerate(members, 1):
-            response += f"   {i}. {member}\n"
-        
-        response += "\n"
-    
-    # Если сообщение слишком длинное, разбиваем на части
-    if len(response) > 4000:
-        parts = [response[i:i+4000] for i in range(0, len(response), 4000)]
-        for part in parts:
-            update.message.reply_text(part, reply_markup=MAIN_KEYBOARD)
-    else:
-        update.message.reply_text(response, reply_markup=MAIN_KEYBOARD)
 
 def show_stats(update: Update, context: CallbackContext):
     """Показать статистику распределения"""
@@ -388,21 +293,15 @@ def show_stats(update: Update, context: CallbackContext):
     
     update.message.reply_text(response, reply_markup=MAIN_KEYBOARD)
 
-def restart_bot(update: Update, context: CallbackContext):
-    """Перезагрузка бота (только для админов)"""
-    user_id = update.effective_user.id
-    
-    if user_id not in ADMIN_IDS:
-        update.message.reply_text(
-            "❌ Эта команда только для администраторов",
-            reply_markup=MAIN_KEYBOARD
-        )
-        return
-    
+def cancel(update: Update, context: CallbackContext):
+    """Отмена регистрации"""
     update.message.reply_text(
-        "🔄 Бот работает! Для перезагрузки нажмите 'Run' в Replit.",
+        "Регистрация отменена.\n"
+        "Если захотите зарегистрироваться, используйте кнопки ниже:",
         reply_markup=MAIN_KEYBOARD
     )
+    context.user_data.clear()
+    return ConversationHandler.END
 
 def main():
     """Основная функция"""
@@ -430,20 +329,16 @@ def main():
             ],
             states={
                 FIO: [MessageHandler(Filters.text & ~Filters.command, get_fio)],
-                CONFIRM: [MessageHandler(Filters.text & ~Filters.command, confirm_fio)],
             },
             fallbacks=[CommandHandler('cancel', cancel)]
         )
         
         # Добавляем обработчики
         dispatcher.add_handler(conv_handler)
-        dispatcher.add_handler(CommandHandler('list', show_teams_list))
-        dispatcher.add_handler(CommandHandler('stats', show_stats))
-        dispatcher.add_handler(CommandHandler('restart', restart_bot))
         
         print("✅ Бот успешно запущен и готов к работе!")
         print("🎯 Две кнопки всегда доступны внизу экрана")
-        print("🌐 Web-сервер активен - Webview должен появиться")
+        print("📝 Теперь бот сначала спрашивает ФИО, потом определяет команду")
         
         updater.start_polling()
         updater.idle()
