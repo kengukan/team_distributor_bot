@@ -16,7 +16,7 @@ logging.basicConfig(
 
 # ⚠️ ЗАМЕНИТЕ НА ВАШ РЕАЛЬНЫЙ USER_ID!
 # Узнайте через @userinfobot в Telegram
-ADMIN_IDS = [123456789]
+ADMIN_IDS = [641655716]
 
 # Состояния разговора
 FIO, CONFIRM = range(2)
@@ -252,4 +252,5 @@ def main():
     updater.idle()
 
 if __name__ == '__main__':
+
     main()
